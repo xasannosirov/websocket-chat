@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
@@ -70,10 +69,10 @@ func wsEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go reader(client, room, roomName)
+	go reader(client, room)
 }
 
-func reader(client Client, room *Room, roomName string) {
+func reader(client Client, room *Room) {
 	conn := client.conn
 	username := client.username
 
@@ -91,7 +90,7 @@ func reader(client Client, room *Room, roomName string) {
 			return
 		}
 
-		fmt.Println(username+":", string(message))
+		log.Println(username+":", string(message))
 
 		room.mu.Lock()
 		for _, c := range room.clients {
