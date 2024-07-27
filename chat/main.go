@@ -1,3 +1,10 @@
+// PRIVATE CHAT
+// 1. connected user with self username
+// 2. send message as 'receiver: content'
+// 3. send message content to receiver if receiver connected to web-socket
+// 4. receive message from receiver
+// 5. continue process
+
 package main
 
 import (

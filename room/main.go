@@ -1,3 +1,10 @@
+// GROUP CHAT
+// 1. connect users with self username and room name
+// 2. send message to room by connected user
+// 3. send message all connected user by web-socket
+// 4. receive message all connected user
+// 5. continue process
+
 package main
 
 import (
