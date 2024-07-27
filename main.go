@@ -5,11 +5,15 @@ import (
 	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
+	"sync"
 )
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
 }
 
 type Client struct {
@@ -17,7 +21,13 @@ type Client struct {
 	username string
 }
 
-var clients = make(map[*websocket.Conn]Client)
+type Room struct {
+	clients map[*websocket.Conn]Client
+	mu      sync.Mutex
+}
+
+var rooms = make(map[string]*Room)
+var globalMu sync.Mutex
 
 func wsEndpoint(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -27,28 +37,51 @@ func wsEndpoint(w http.ResponseWriter, r *http.Request) {
 	}
 
 	username := r.URL.Query().Get("username")
-	client := Client{conn: conn, username: username}
-	clients[conn] = client
-
-	log.Println("client", username, "connected")
-
-	if err := conn.WriteMessage(1, []byte("Hi "+username+"!")); err != nil {
-		log.Println(err)
-		delete(clients, conn)
+	roomName := r.URL.Query().Get("room")
+	if username == "" || roomName == "" {
+		log.Println("username and room query params are required")
 		conn.Close()
 		return
 	}
 
-	go reader(client)
+	globalMu.Lock()
+	room, ok := rooms[roomName]
+	if !ok {
+		room = &Room{
+			clients: make(map[*websocket.Conn]Client),
+		}
+		rooms[roomName] = room
+	}
+	globalMu.Unlock()
+
+	client := Client{conn: conn, username: username}
+	room.mu.Lock()
+	room.clients[conn] = client
+	room.mu.Unlock()
+
+	log.Println("client", username, "connected to room", roomName)
+
+	if err := conn.WriteMessage(websocket.TextMessage, []byte("Hi "+username+"! Welcome to room "+roomName)); err != nil {
+		log.Println(err)
+		room.mu.Lock()
+		delete(room.clients, conn)
+		room.mu.Unlock()
+		conn.Close()
+		return
+	}
+
+	go reader(client, room, roomName)
 }
 
-func reader(client Client) {
+func reader(client Client, room *Room, roomName string) {
 	conn := client.conn
 	username := client.username
 
 	defer func() {
+		room.mu.Lock()
 		conn.Close()
-		delete(clients, conn)
+		delete(room.clients, conn)
+		room.mu.Unlock()
 	}()
 
 	for {
@@ -60,14 +93,15 @@ func reader(client Client) {
 
 		fmt.Println(username+":", string(message))
 
-		for _, c := range clients {
+		room.mu.Lock()
+		for _, c := range room.clients {
 			if c.conn != conn {
 				if err := c.conn.WriteMessage(messageType, []byte(username+": "+string(message))); err != nil {
 					log.Println(err)
-					return
 				}
 			}
 		}
+		room.mu.Unlock()
 	}
 }
 
@@ -77,5 +111,5 @@ func setUpRoutes() {
 
 func main() {
 	setUpRoutes()
-	http.ListenAndServe(":9999", nil)
+	log.Fatal(http.ListenAndServe(":9999", nil))
 }
