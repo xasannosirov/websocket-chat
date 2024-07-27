@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 )
@@ -48,7 +48,15 @@ func (h *Hub) Run() {
 }
 
 func handleConnection(h *Hub, w http.ResponseWriter, r *http.Request) {
-	conn, err := websocket.Upgrade(w, r, nil, 1024, 1024)
+	socketUpgrade := websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
+	}
+
+	conn, err := socketUpgrade.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err)
 		return
@@ -64,7 +72,10 @@ func handleConnection(h *Hub, w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer func() {
 			delete(h.Connections, connection)
-			connection.WS.Close()
+			err := connection.WS.Close()
+			if err != nil {
+				return
+			}
 		}()
 
 		for {
@@ -87,13 +98,16 @@ func handleConnection(h *Hub, w http.ResponseWriter, r *http.Request) {
 
 func handleMessageHTTPRequest(h *Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		body, err := ioutil.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "Failed to read request body", http.StatusInternalServerError)
 			return
 		}
 		h.Broadcast <- body
-		fmt.Fprintf(w, "Message sent to channel")
+		_, err = fmt.Fprintf(w, "Message sent to channel")
+		if err != nil {
+			return
+		}
 	}
 }
 

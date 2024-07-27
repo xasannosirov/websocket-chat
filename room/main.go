@@ -14,7 +14,7 @@ import (
 	"sync"
 )
 
-var upgrader = websocket.Upgrader{
+var socketUpgrade = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
@@ -36,7 +36,7 @@ var rooms = make(map[string]*Room)
 var globalMu sync.Mutex
 
 func wsEndpoint(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := socketUpgrade.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err)
 		return
@@ -46,7 +46,10 @@ func wsEndpoint(w http.ResponseWriter, r *http.Request) {
 	roomName := r.URL.Query().Get("room")
 	if username == "" || roomName == "" {
 		log.Println("username and room query params are required")
-		conn.Close()
+		err := conn.Close()
+		if err != nil {
+			return
+		}
 		return
 	}
 
@@ -72,7 +75,10 @@ func wsEndpoint(w http.ResponseWriter, r *http.Request) {
 		room.mu.Lock()
 		delete(room.clients, conn)
 		room.mu.Unlock()
-		conn.Close()
+		err := conn.Close()
+		if err != nil {
+			return
+		}
 		return
 	}
 
@@ -85,7 +91,10 @@ func reader(client Client, room *Room) {
 
 	defer func() {
 		room.mu.Lock()
-		conn.Close()
+		err := conn.Close()
+		if err != nil {
+			return
+		}
 		delete(room.clients, conn)
 		room.mu.Unlock()
 	}()
